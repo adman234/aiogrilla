@@ -14,7 +14,7 @@ from aiogrilla.client import (
     _REFRESH_FLOOR_S,
     GrillaClient,
 )
-from aiogrilla.exceptions import GrillaAuthError, GrillaError
+from aiogrilla.exceptions import GrillaAuthError, GrillaConnectionError, GrillaError
 from aiogrilla.models import CookMode, Grill, GrillState, Mode, TemperatureUnit
 
 
@@ -68,6 +68,7 @@ def patched(monkeypatch):
         s.async_disconnect = AsyncMock()
         s.add_grill = MagicMock()
         s.update_grill = MagicMock()
+        s.async_publish = AsyncMock()
         streams.append(s)
         return s
 
@@ -680,3 +681,56 @@ async def test_heartbeat_is_opt_in(patched):
     await c.async_connect()
     assert patched["streams"][-1].kwargs == {"heartbeat_interval": const.HEARTBEAT_INTERVAL_SECONDS}
     await c.async_disconnect()
+
+
+async def test_set_target_temp_publishes_command(patched):
+    c = GrillaClient(refresh_token="RE")
+    await c.async_get_grills()
+    await c.async_connect()
+    assert await c.async_set_target_temp("sx1", 227) == 225
+    patched["streams"][-1].async_publish.assert_awaited_once_with(
+        "topic/client/sx1/command", {"cmd": "desired_temp", "data": 225}
+    )
+    await c.async_disconnect()
+
+
+async def test_set_probe_target_temp_publishes_per_probe_command(patched):
+    c = GrillaClient(refresh_token="RE")
+    await c.async_get_grills()
+    await c.async_connect()
+    assert await c.async_set_probe_target_temp("sx1", 165) == 165
+    assert await c.async_set_probe_target_temp("sx1", 203, probe=2) == 203
+    publish = patched["streams"][-1].async_publish
+    assert [call.args for call in publish.await_args_list] == [
+        ("topic/client/sx1/command", {"cmd": "desired_probe_temp", "data": 165}),
+        ("topic/client/sx1/command", {"cmd": "desired_probe2_temp", "data": 203}),
+    ]
+    await c.async_disconnect()
+
+
+async def test_set_target_temp_before_connect_raises(patched):
+    c = GrillaClient(refresh_token="RE")
+    await c.async_get_grills()
+    with pytest.raises(GrillaConnectionError):
+        await c.async_set_target_temp("sx1", 225)
+
+
+async def test_set_target_temp_out_of_range_publishes_nothing(patched):
+    c = GrillaClient(refresh_token="RE")
+    await c.async_get_grills()
+    await c.async_connect()
+    with pytest.raises(ValueError):
+        await c.async_set_target_temp("sx1", 600)
+    patched["streams"][-1].async_publish.assert_not_awaited()
+    await c.async_disconnect()
+
+
+async def test_power_down_refreshes_stale_token_and_posts(patched, monkeypatch):
+    power_down = AsyncMock()
+    monkeypatch.setattr("aiogrilla.client.async_power_down", power_down)
+    patched["auth"].id_token_fresh = False
+    session = MagicMock(spec=aiohttp.ClientSession)
+    c = GrillaClient(refresh_token="RE", session=session)
+    await c.async_power_down("sx1")
+    patched["auth"].async_refresh.assert_awaited_once()
+    power_down.assert_awaited_once_with(session, id_token="ID", grill_id="sx1")

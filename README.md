@@ -85,8 +85,14 @@ aiogrilla is intentionally read-only in its first release:
   `{"timestamp": <epoch ms>}` to `topic/client/<grill id>/heartbeat` every 15 s
   while connected, as the vendor app does while it is open
 
-Write operations (set temperature, start/stop cook, etc.) are out of scope for
-v1.
+Remote control (fork addition):
+
+- `async_set_target_temp(grill_id, temp_f)`: grill setpoint, rounded to 5 °F, 180-500 °F
+- `async_set_probe_target_temp(grill_id, temp_f, probe=1|2)`: food-probe setpoint, 100-225 °F
+- `async_power_down(grill_id)`: turn the grill off (the vendor's PowerDown call)
+
+Setpoints are published to `topic/client/<grill id>/command` as the vendor app does; the
+controller always works in °F. There is no remote power-on.
 
 ## Tested hardware
 

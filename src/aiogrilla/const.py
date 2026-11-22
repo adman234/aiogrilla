@@ -12,12 +12,24 @@ IOT_ENDPOINT = "a2j9sbhiey57ml-ats.iot.us-east-2.amazonaws.com"
 
 # REST discovery endpoint (host/path/params may change)
 API_GRILLS_BY_OWNER = "https://v3v2ce8vjg.execute-api.us-east-2.amazonaws.com/default"
+# REST power-off endpoint the vendor app calls ("PowerDown"); there is no remote power-on.
+API_POWER_DOWN = "https://ttl0nzlbek.execute-api.us-east-2.amazonaws.com/default"
 
 TOPIC_GRILL_STATE = "grilla/{device_id}/grill_state"  # the only authorized subscribe topic
 # Publish topics the vendor app's IoT policy authorizes (alongside the thing shadow).
 TOPIC_HEARTBEAT = "topic/client/{device_id}/heartbeat"
 TOPIC_COMMAND = "topic/client/{device_id}/command"
 HEARTBEAT_INTERVAL_SECONDS = 15.0  # the app's DEVICE_HB_INTERVAL (15000 ms)
+
+# Setpoint commands (published to TOPIC_COMMAND as {"cmd": <cmd>, "data": <F>}). The
+# controller works in Fahrenheit regardless of the display unit; limits are the app's.
+CMD_TARGET_TEMP = "desired_temp"
+CMD_PROBE_TARGET_TEMP = {1: "desired_probe_temp", 2: "desired_probe2_temp"}
+GRILL_TARGET_MIN_F = 180
+GRILL_TARGET_MAX_F = 500
+GRILL_TARGET_STEP_F = 5  # the app rounds grill setpoints to 5 F before sending
+PROBE_TARGET_MIN_F = 100
+PROBE_TARGET_MAX_F = 225
 
 PROBE_UNPLUGGED = 65535  # observed sentinel (probe2); ASSUMED for probe1
 TEMP_MAX_PLAUSIBLE_F = 1000  # out-of-range guard -> treat as unplugged/None
