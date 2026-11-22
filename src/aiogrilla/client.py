@@ -13,8 +13,9 @@ import aiohttp
 
 from . import const
 from .auth import Credentials, GrillaAuth
+from .control import async_power_down, grill_target_command, probe_target_command
 from .discovery import async_get_grills
-from .exceptions import GrillaAuthError, GrillaError
+from .exceptions import GrillaAuthError, GrillaConnectionError, GrillaError
 from .models import Grill, GrillState
 from .mqtt import AvailCb, IotStream, StateCb
 
@@ -146,6 +147,39 @@ class GrillaClient:
         """Register a callback fired when credential renewal fails with GrillaAuthError."""
         self._auth_failed_cb = cb
 
+    async def async_set_target_temp(self, grill_id: str, temp_f: float) -> int:
+        """Set the grill's target temperature in °F (rounded to 5 °F, 180-500 °F).
+
+        Publishes the app's command over the live connection and returns the value sent.
+        Raises ValueError when out of range, GrillaConnectionError when not connected."""
+        command = grill_target_command(temp_f)
+        await self._async_command(grill_id, command)
+        return command["data"]
+
+    async def async_set_probe_target_temp(
+        self, grill_id: str, temp_f: float, *, probe: int = 1
+    ) -> int:
+        """Set food probe 1 or 2's target temperature in °F (whole degrees, 100-225 °F).
+
+        Returns the value sent. Raises ValueError when out of range or for an unknown probe,
+        GrillaConnectionError when not connected."""
+        command = probe_target_command(temp_f, probe)
+        await self._async_command(grill_id, command)
+        return command["data"]
+
+    async def async_power_down(self, grill_id: str) -> None:
+        """Turn the grill off through the vendor's PowerDown REST call.
+
+        There is no remote power-on. Raises GrillaAuthError when the account token is
+        rejected and GrillaConnectionError for other failures."""
+        if not self._auth.id_token_fresh:
+            await self._auth.async_refresh()
+        await async_power_down(
+            self._get_session(),
+            id_token=self._auth.id_token,  # type: ignore[arg-type]
+            grill_id=grill_id,
+        )
+
     async def async_connect(self, loop: asyncio.AbstractEventLoop | None = None) -> None:
         """Obtain IAM credentials and open the IoT connection for all discovered grills.
 
@@ -203,6 +237,13 @@ class GrillaClient:
     # ------------------------------------------------------------------
     # Private helpers
     # ------------------------------------------------------------------
+
+    async def _async_command(self, grill_id: str, command: dict[str, object]) -> None:
+        """Publish one command to the grill's command topic."""
+        if self._stream is None:
+            raise GrillaConnectionError("not connected; call async_connect() first")
+        topic = const.TOPIC_COMMAND.format(device_id=grill_id)
+        await self._stream.async_publish(topic, command)
 
     def _get_session(self) -> aiohttp.ClientSession:
         """Return the shared aiohttp session, creating it lazily on first call."""
