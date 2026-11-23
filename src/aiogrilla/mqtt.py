@@ -97,6 +97,8 @@ class StateDispatcher:
         except Exception:  # total safety net; parser is total, json may not be
             _LOGGER.warning("dropping unparseable grill_state for %s", self._id, exc_info=True)
             return
+        # Fork-only timing aid (heartbeat measurements): one line per grill_state.
+        _LOGGER.debug("grill_state received for %s", self._id)
         self._last = state
         self.set_available(True)  # fresh telemetry -> available (idempotent)
         self._arm_watchdog()
@@ -231,6 +233,7 @@ class IotStream:
         for grill_id in list(self._dispatchers):
             try:
                 await self.async_publish(const.TOPIC_HEARTBEAT.format(device_id=grill_id), payload)
+                _LOGGER.debug("heartbeat sent to %s", grill_id)
             except GrillaConnectionError:
                 _LOGGER.debug("heartbeat for %s not delivered", grill_id, exc_info=True)
 
